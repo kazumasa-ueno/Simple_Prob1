@@ -17,7 +17,7 @@ program main
 	real(8) :: Ifc(-1:1,-1:1) !Restriction operator
 	real(8) :: Icf(-1:1,-1:1) !Interpolation operation
 
-	call initialize(phi, rho, f, Lf, Lc, Ifc, Icf, N, hf, hc, e0)
+	call initialize(phi, rho, f, Lf, Lc, Ifc, Icf, N, e0, hf)
 
 	call smooth(phi, f, Lf, N, hf, nu1)
 
@@ -30,20 +30,20 @@ program main
 	stop
 contains
 
-	subroutine initialize(phi, rho, f, Lf, Lc, Ifc, Icf, N, hf, hc, e0)
+	subroutine initialize(phi, rho, f, Lf, Lc, Ifc, Icf, N, e0, hf)
 		implicit none
 
-		real(8), intent(inout) :: phi(:,:), rho(:,:), f(:,:), Lf(:,:), Lc(:,:), Ifc(:,:), Icf(:,:)
-		real(8), intent(in) :: e0
+		real(8), intent(inout) :: phi(:,:), rho(:,:), f(:,:), Lf(-1:1,-1:1), Lc(-1:1,-1:1), Ifc(-1:1,-1:1), Icf(-1:1,-1:1)
+		real(8), intent(in) :: e0, hf
 		integer, intent(in) :: N
 		integer :: i, j
 
-		phi(:) = 0.d0
-		rho(:) = 0.d0
+		phi(:,:) = 0.d0
+		rho(:,:) = 0.d0
 		
 		do j = 1, N
 			do i = 1, N
-				if (((N/2-i)**2+(N/2-j)**2)*h**2 < 0.05**2) then
+				if (((N/2-i)**2+(N/2-j)**2)*hf**2 < 0.05**2) then
 					rho(i,j) = 1.d-8
 				end if
 			end do
@@ -88,7 +88,7 @@ contains
 	subroutine smooth(phi, f, Lf, N, hf, nu)
 		implicit none
 
-		real(8), intent(in) :: f(:,:), Lf(:,:), hf
+		real(8), intent(in) :: f(:,:), Lf(-1:1,-1:1), hf
 		integer, intent(in) :: N, nu
 		real(8), intent(inout) :: phi(:,:)
 
@@ -120,8 +120,9 @@ contains
 	subroutine stencil(M, u, N)
 		implicit none
 
-		real(8), intent(in) :: M(:,:)
+		real(8), intent(in) :: M(-1:1,-1:1)
 		real(8), intent(inout) :: u(:,:)
+		integer, intent(in) :: N
 
 		integer :: i, j
 		real(8) :: tmp(N,N)
@@ -139,7 +140,7 @@ contains
 	subroutine Restriction(M, uf, uc, N, Nc)
 		implicit none
 		
-		real(8), intent(in) :: M(:,:), uf(:,:)
+		real(8), intent(in) :: M(-1:1,-1:1), uf(:,:)
 		real(8), intent(inout) :: uc(:,:)
 		integer, intent(in) :: N, Nc
 
@@ -159,7 +160,7 @@ contains
 	subroutine Interpolation(M, uf, uc, N, Nc)
 		implicit none
 
-		real(8), intent(in) :: M(:,:), uc(:,:)
+		real(8), intent(in) :: M(-1:1,-1:1), uc(:,:)
 		real(8), intent(inout) :: uf(:,:)
 		integer, intent(in) :: N, Nc
 
@@ -172,9 +173,9 @@ contains
 				if( (mod(i,2) /= 0) .and. (mod(j,2) /= 0) ) then
 					tmp(i,j) = M(0,0) * uc((i-1)/2+1,(j-1)/2+1)
 				elseif ( (mod(i,2) /= 0 ) .and. (mod(j,2) == 0) ) then
-					tmp(i,j) = M(0,1) * uc((i-1)/2+1,j/2+1) + M(0,-1) * uc((i-1/2+1,j/2))
+					tmp(i,j) = M(0,1) * uc((i-1)/2+1,j/2+1) + M(0,-1) * uc((i-1)/2+1,j/2)
 				elseif ( (mod(i,2) == 0 ) .and. (mod(j,2) /= 0) ) then
-					tmp(i,j) = M(1,0) * uc(i/2+1,(j-1)/2+1) + M(-1,0) * uc(i/2,(j-1/2+1))
+					tmp(i,j) = M(1,0) * uc(i/2+1,(j-1)/2+1) + M(-1,0) * uc(i/2,(j-1)/2+1)
 				else
 					tmp(i,j) = M(1,1) * uc(i/2+1,j/2+1) + M(1,-1) * uc(i/2+1,j/2) &
 										+ M(-1,1) * uc(i/2,j/2+1) + M(-1,-1) * uc(i/2,j/2)
@@ -188,7 +189,7 @@ contains
 	subroutine CGC(phi, Lf, Lc, Ifc, Icf, N, Nc, f, hc)
 		implicit none
 		
-		real(8), intent(in) :: Lf(:,:), Lc(:,:), Ifc(:,:), Icf(:,:), f(:), hc
+		real(8), intent(in) :: Lf(-1:1,-1:1), Lc(-1:1,-1:1), Ifc(-1:1,-1:1), Icf(-1:1,-1:1), f(:,:), hc
 		real(8), intent(inout) :: phi(:,:)
 		integer, intent(in) :: N, Nc
 
@@ -223,7 +224,7 @@ contains
 
 		call Interpolation(Icf, vf, vc, N, Nc)
 
-		phi(:,:) = uf(:,:) + vf(:,:)
+		phi(:,:) = phi(:,:) + vf(:,:)
 
 	end subroutine CGC
 
