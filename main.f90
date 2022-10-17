@@ -21,9 +21,11 @@ program main
 
 	call smooth(phi, f, Lf, N, hf, nu1)
 
-	call CGC(phi, Lf, Lc, Ifc, Icf, N, Nc, f)
+	call CGC(phi, Lf, Lc, Ifc, Icf, N, Nc, f, hc)
 
 	call smooth(phi, f, Lf, N, hf, nu2)
+
+	write(*,*) "end program"
 
 	stop
 contains
@@ -90,7 +92,7 @@ contains
 		integer, intent(in) :: N, nu
 		real(8), intent(inout) :: phi(:,:)
 
-		real(8) :: u(N,N)
+		real(8) :: z(N,N)
 		real(8), parameter :: omega = 1.d0 
 		integer :: i, j, nt
 
@@ -183,22 +185,41 @@ contains
 
 	end subroutine Interpolation
 
-	subroutine CGC(phi, Lf, Lc, Ifc, Icf, N, Nc, f)
+	subroutine CGC(phi, Lf, Lc, Ifc, Icf, N, Nc, f, hc)
 		implicit none
 		
-		real(8), intent(in) :: Lf(:,:), Lc(:,:), Ifc(:,:), Icf(:,:), f(:)
+		real(8), intent(in) :: Lf(:,:), Lc(:,:), Ifc(:,:), Icf(:,:), f(:), hc
 		real(8), intent(inout) :: phi(:,:)
 		integer, intent(in) :: N, Nc
 
-		real(8) :: df(N,N), dc(Nc,Nc), vf(N,N), vc(Nc,Nc)
-		integer :: i, j
+		real(8) :: df(N,N), dc(Nc,Nc), vf(N,N), vc(Nc,Nc), z(Nc,Nc)
+		integer :: i, j, nt
 
 		call stencil(Lf, phi, N)
 		df(:,:) = f(:,:) - phi(:,:)
 
 		call Restriction(Ifc, df, dc, N, Nc)
 
-		call stencil() !後で考える
+		z(:,:) = 0.d0
+
+		do nt = 1, 10
+			do j = 2, Nc-1
+				do i = 2, Nc-1
+					if(mod(i+j,2) == 0) then
+						z(i,j) = (hc**2 * dc(i,j) + vc(i-1,j) + vc(i+1,j) + vc(i,j-1) + vc(i,j+1)) / 4.d0
+					end if
+				end do
+			end do
+			vc(:,:) = z(:,:)
+			do j = 2, Nc-1
+				do i = 2, Nc-1
+					if(mod(i+j,2) /= 0) then
+						z(i,j) = (hc**2 * dc(i,j) + vc(i-1,j) + vc(i+1,j) + vc(i,j-1) + vc(i,j+1)) / 4.d0
+					end if
+				end do
+			end do
+			vc(:,:) = z(:,:)
+		end do
 
 		call Interpolation(Icf, vf, vc, N, Nc)
 
