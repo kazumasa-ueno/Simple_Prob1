@@ -8,7 +8,7 @@ program main
 	real(8), parameter :: hc = X / Nc !粗い格子間隔
 	real(8), parameter :: e0 = 8.85d-12 !真空の誘電率
 	real(8), parameter :: Conv = 1.d-6 !収束判定用
-	integer, parameter :: nu1 = 1, nu2 = 5000 !smoothing のステップ数上限
+	integer, parameter :: nu1 = 10, nu2 = 50000 !smoothing のステップ数上限
 	integer :: ios
 	
 	real(8) :: phi(N,N) !計算する電位
@@ -130,7 +130,7 @@ contains
 						if(Max < abs(phi(i,j))) then 
 							Max = phi(i,j) 
 						end if
-						CurErr = (abs(phi(i,j) - Prev)) / Max
+						CurErr = abs(phi(i,j) - Prev)
 						if(MaxErr < CurErr) then 
 							MaxErr = CurErr 
 						end if
@@ -141,6 +141,7 @@ contains
 				write(*,*) nt, MaxErr, Conv
 				exit
 			end if
+			! write(*,*) maxval(phi)
 		end do
 
 	end subroutine smooth
@@ -158,7 +159,7 @@ contains
 		tmp(:,:) = u(:,:)
 		do j = 2, N-1
 			do i = 2, N-1
-				tmp(i,j) = sum(M(:,:) * u(i-1:i+1,j-1:j+1)) !バグるかも
+				tmp(i,j) = sum(M(:,:) * u(i-1:i+1,j-1:j+1))
 			end do
 		end do
 		u(:,:) = tmp(:,:)
@@ -178,7 +179,7 @@ contains
 		tmp(:,:) = uc(:,:)
 		do j = 2, Nc-1
 			do i = 2, Nc-1
-				tmp(i,j) = sum(M(:,:) * uf((i-1)*2:(i-1)*2+2,(j-1)*2:(j-1)*2+2)) !バグるかも　
+				tmp(i,j) = sum(M(:,:) * uf((i-1)*2:(i-1)*2+2,(j-1)*2:(j-1)*2+2))
 			end do
 		end do
 		uc(:,:) = tmp(:,:)
@@ -221,15 +222,16 @@ contains
 		real(8), intent(inout) :: phi(:,:)
 		integer, intent(in) :: N, Nc
 
-		real(8) :: df(N,N), dc(Nc,Nc), vf(N,N), vc(Nc,Nc)
+		real(8) :: df(N,N), dc(Nc,Nc), vf(N,N), vc(Nc,Nc), z(N,N)
 		integer :: i, j, nt, loop
 		real(8) :: Max !最大値
 		real(8) :: MaxErr !最大のエラー
 		real(8) :: CurErr !現在のエラー
 		real(8) :: Prev !前のループの値
 
-		call stencil(Lf, phi, N)
-		df(:,:) = f(:,:) - phi(:,:)
+		z(:,:) = phi(:,:)
+		call stencil(Lf, z, N)
+		df(:,:) = f(:,:) - z(:,:)
 
 		call Restriction(Ifc, df, dc, N, Nc)
 
@@ -276,7 +278,8 @@ contains
 
 		phi(:,:) = phi(:,:) + vf(:,:)
 
-		write(*,*) loop
+		write(*,*) loop, maxval(vf)
+		! write(*,*) maxval(phi)
 
 	end subroutine CGC
 
