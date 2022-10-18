@@ -20,11 +20,12 @@ program main
 
 	call initialize(phi, rho, f, L, Ifc, Icf, N, e0, hf)
 
-	call smooth(phi, f, L, N, hf, Conv, nu1)
+	call smooth(phi, f, L, hf, Conv, nu1)
+	! call smooth(phi, f, L, N, hf, Conv, nu1)
 
 	call CGC(phi, L, Ifc, Icf, N, Nc, f, hc, Conv)
 
-	call smooth(phi, f, L, N, hf, Conv, nu2)
+	call smooth(phi, f, L, hf, Conv, nu2)
 
 	open(unit=10, file="./output/output.txt", iostat=ios, status="replace", action="write")
 	if ( ios /= 0 ) stop "Error opening file ./output/output.txt"
@@ -81,19 +82,22 @@ contains
 
 	end subroutine initialize
 
-	subroutine smooth(phi, f, L, N, hf, Conv, nu)
+	subroutine smooth(phi, f, L, hf, Conv, nu)
 		implicit none
 
 		real(8), intent(in) :: f(:,:), L(-1:1,-1:1), hf, Conv
-		integer, intent(in) :: N, nu
+		integer, intent(in) :: nu
 		real(8), intent(inout) :: phi(:,:)
 
-		integer :: i, j, nt
+		integer :: i, j, nt, N, b(2)
 		real(8) :: Max !最大値
 		real(8) :: MaxErr !最大のエラー
 		real(8) :: CurErr !現在のエラー
 		real(8) :: Prev !前のループの値
 		real(8) :: Prev_phi !前のループでのphiの最大値
+
+		b = shape(phi)
+		N = b(1)
 
 		Max = 1.d-5
 		Prev_phi = 0.d0

@@ -1,31 +1,28 @@
 program main
 	implicit none
 
-	integer, parameter :: N = 128 !横方向格子数
-	integer, parameter :: Nc = N / 2 !粗い格子数
-	real(8), parameter :: X = 1.d0, Y = 1.d0 !計算領域サイズ
-	real(8), parameter :: hf = X / N !細かい格子間隔
-	real(8), parameter :: hc = X / Nc !粗い格子間隔
+	integer, parameter :: k = 7
+	integer, parameter :: gamma = 1
+	integer, parameter :: N = 2**k+2 !横方向格子数
+	integer, parameter :: Nc = 2**(k-1)+2 !粗い格子の横方向格子数
+	real(8), parameter :: X = 1.d0 !計算領域サイズ
+	real(8), parameter :: hf = X / (N-1) !細かい格子間隔
 	real(8), parameter :: e0 = 8.85d-12 !真空の誘電率
 	real(8), parameter :: Conv = 1.d-6 !収束判定用
-	integer, parameter :: nu1 = 10, nu2 = 50000 !smoothing のステップ数上限
+	integer, parameter :: nu1 = 3, nu2 = 100 !smoothing のステップ数上限
 	integer :: ios
 	
 	real(8) :: phi(N,N) !計算する電位
 	real(8) :: rho(N,N) !電荷密度
 	real(8) :: f(N,N) !右辺の値
-	real(8) :: Lf(-1:1,-1:1) !L on fine grid
-	real(8) :: Lc(-1:1,-1:1) !L on course grid
+	real(8) :: L(-1:1,-1:1) !L on fine grid
 	real(8) :: Ifc(-1:1,-1:1) !Restriction operator
 	real(8) :: Icf(-1:1,-1:1) !Interpolation operation
 
-	call initialize(phi, rho, f, Lf, Lc, Ifc, Icf, N, e0, hf)
+	call initialize(phi, rho, f, L, Ifc, Icf, N, e0, hf)
 
-	call smooth(phi, f, Lf, N, hf, Conv, nu1)
-
-	call CGC(phi, Lf, Lc, Ifc, Icf, N, Nc, f, hc, Conv)
-
-	call smooth(phi, f, Lf, N, hf, Conv, nu2)
+	! call MGCYC(k, gamma, phi, L/hf**2, f, nu1, nu2, X, Ifc, Icf)
+	call MGCYC(k, gamma, phi, L, f, nu1, nu2, X, Ifc, Icf, N, Nc)
 
 	open(unit=10, file="./output/output.txt", iostat=ios, status="replace", action="write")
 	if ( ios /= 0 ) stop "Error opening file ./output/output.txt"
@@ -35,10 +32,10 @@ program main
 	stop
 contains
 
-	subroutine initialize(phi, rho, f, Lf, Lc, Ifc, Icf, N, e0, hf)
+	subroutine initialize(phi, rho, f, L, Ifc, Icf, N, e0, hf)
 		implicit none
 
-		real(8), intent(inout) :: phi(:,:), rho(:,:), f(:,:), Lf(-1:1,-1:1), Lc(-1:1,-1:1), Ifc(-1:1,-1:1), Icf(-1:1,-1:1)
+		real(8), intent(inout) :: phi(:,:), rho(:,:), f(:,:), L(-1:1,-1:1), Ifc(-1:1,-1:1), Icf(-1:1,-1:1)
 		real(8), intent(in) :: e0, hf
 		integer, intent(in) :: N
 		integer :: i, j
@@ -54,23 +51,15 @@ contains
 			end do
 		end do
 
-		f(:,:) = rho(:,:) / e0
+		f(:,:) =  rho(:,:) / e0
 
-		Lf( :, :) = 0.d0
-		Lf( 0, 0) = 4.d0
-		Lf(-1, 0) = -1.d0
-		Lf( 0,-1) = -1.d0
-		Lf( 1, 0) = -1.d0
-		Lf( 0, 1) = -1.d0
-		Lf(:,:) = Lf / hf**2
-
-		Lc( :, :) = 0.d0
-		Lc( 0, 0) = 4.d0
-		Lc(-1, 0) = -1.d0
-		Lc( 0,-1) = -1.d0
-		Lc( 1, 0) = -1.d0
-		Lc( 0, 1) = -1.d0
-		Lc(:,:) = Lc / hc**2
+		L( :, :) = 0.d0
+		L( 0, 0) = 4.d0
+		L(-1, 0) = -1.d0
+		L( 0,-1) = -1.d0
+		L( 1, 0) = -1.d0
+		L( 0, 1) = -1.d0
+		! L(:,:) = -L(:,:)
 
 		Ifc( :, :) = 1.d0
 		Ifc( 0, 0) = 4.d0
@@ -90,20 +79,25 @@ contains
 
 	end subroutine initialize
 
-	subroutine smooth(phi, f, Lf, N, hf, Conv, nu)
+	subroutine smooth(phi, f, hf, nu)
 		implicit none
 
-		real(8), intent(in) :: f(:,:), Lf(-1:1,-1:1), hf, Conv
-		integer, intent(in) :: N, nu
+		real(8), intent(in) :: f(:,:), hf
+		integer, intent(in) :: nu
 		real(8), intent(inout) :: phi(:,:)
 
-		integer :: i, j, nt
+		integer :: i, j, nt, N, b(2)
 		real(8) :: Max !最大値
 		real(8) :: MaxErr !最大のエラー
 		real(8) :: CurErr !現在のエラー
 		real(8) :: Prev !前のループの値
+		real(8) :: Prev_phi !前のループでのphiの最大値
+
+		b = shape(phi)
+		N = b(1)
 
 		Max = 1.d-5
+		Prev_phi = 0.d0
 		do nt = 1, nu
 			MaxErr = 0.d0
 			CurErr = 0.d0
@@ -137,11 +131,8 @@ contains
 					end if
 				end do
 			end do
-			if(MaxErr < Conv) then 
-				! write(*,*) nt, MaxErr, Conv
-				exit
-			end if
-			write(*,*) maxval(phi)
+			! write(*,*) abs(maxval(phi) - Prev_phi)
+			Prev_phi = maxval(phi)
 		end do
 
 	end subroutine smooth
@@ -215,79 +206,59 @@ contains
 
 	end subroutine Interpolation
 
-	subroutine CGC(phi, Lf, Lc, Ifc, Icf, N, Nc, f, hc, Conv)
+
+	recursive subroutine MGCYC(k,gamma,u,L,f,nu1,nu2, X,Ifc,Icf,N,Nc)
 		implicit none
-		
-		real(8), intent(in) :: Lf(-1:1,-1:1), Lc(-1:1,-1:1), Ifc(-1:1,-1:1), Icf(-1:1,-1:1), f(:,:), hc, Conv
-		real(8), intent(inout) :: phi(:,:)
-		integer, intent(in) :: N, Nc
 
-		real(8) :: df(N,N), dc(Nc,Nc), vf(N,N), vc(Nc,Nc), z(N,N)
-		integer :: i, j, nt, loop
-		real(8) :: Max !最大値
-		real(8) :: MaxErr !最大のエラー
-		real(8) :: CurErr !現在のエラー
-		real(8) :: Prev !前のループの値
+		integer, intent(in) :: k, gamma, nu1, nu2, N, Nc
+		real(8), intent(in) :: L(-1:1,-1:1), f(:,:), X, Ifc(-1:1,-1:1), Icf(-1:1,-1:1)
+		real(8), intent(inout) :: u(:,:)
 
-		z(:,:) = phi(:,:)
-		call stencil(Lf, z, N)
-		df(:,:) = f(:,:) - z(:,:)
+		integer :: Ncc
+		integer :: nt
+		real(8) :: df(N,N), dc(Nc,Nc), vf(N,N), vc(Nc,Nc), tmp(N,N)
+		real(8) :: hf, hc
 
+		hf = X/(N-1)
+		hc = X/(Nc-1)
+
+		!Presmoothing
+		call smooth(u, f, hf, nu1)
+
+		!Coarse grid correction
+		!Compute the defect
+		tmp(:,:) = u(:,:)
+		call stencil(L/hf**2, tmp, N)
+		! write(*,*) N, maxval(f), maxval(tmp)
+		df(:,:) = f(:,:) - tmp(:,:)
+
+		!Restrict the defect
 		call Restriction(Ifc, df, dc, N, Nc)
 
-		Max = 1.d-10
-		MaxErr = 1.d0
-		loop = 0
-		do while(MaxErr > Conv)
-			MaxErr = 0.d0
-			CurErr = 0.d0
-			do j = 2, Nc-1
-				do i = 2, Nc-1
-					if(mod(i+j,2) == 0) then
-						Prev = vc(i,j)
-						vc(i,j) = (hc**2 * dc(i,j) + vc(i-1,j) + vc(i+1,j) + vc(i,j-1) + vc(i,j+1)) / 4.d0
-						if(Max < abs(vc(i,j))) then 
-							Max = vc(i,j) 
-						end if
-						CurErr = (abs(vc(i,j) - Prev)) / Max
-						if(MaxErr < CurErr) then 
-							MaxErr = CurErr 
-						end if
-					end if
-				end do
+		!Compute an approximate solution v of the defect equation on k-1
+		if(k==1) then
+			vc(:,:) = 0.d0
+			vc(2,2) = dc(2,2)*hc**2 / 4.d0
+		else
+			do nt = 1, gamma
+				Ncc = 2**(k-2)+2	
+				vc(:,:) = 0.d0
+				call MGCYC(k-1,gamma,vc,L,dc,nu1,nu2,X,Ifc,Icf,Nc,Ncc)
 			end do
-			do j = 2, Nc-1
-				do i = 2, Nc-1
-					if(mod(i+j,2) /= 0) then
-						Prev = vc(i,j)
-						vc(i,j) = (hc**2 * dc(i,j) + vc(i-1,j) + vc(i+1,j) + vc(i,j-1) + vc(i,j+1)) / 4.d0
-						if(Max < abs(vc(i,j))) then 
-							Max = vc(i,j) 
-						end if
-						CurErr = (abs(vc(i,j) - Prev)) / Max
-						if(MaxErr < CurErr) then 
-							MaxErr = CurErr 
-						end if
-					end if
-				end do
-			end do
-			loop = loop + 1
-		end do
+		end if
 
+
+		!Interpolate the correction
+		vf(:,:) = 0.d0
 		call Interpolation(Icf, vf, vc, N, Nc)
 
-		phi(:,:) = phi(:,:) + vf(:,:)
+		!Compute the corrected approximation on k
+		u(:,:) = u(:,:) + vf(:,:)
 
-		! write(*,*) loop, maxval(vf)
-		write(*,*) maxval(phi)
+		!Postsmoothing
+		call smooth(u, f, hf, nu2)
+		! write(*,*) N, maxval(u), maxval(vf)
 
-	end subroutine CGC
-
-	recursive subroutine mgcyc(k,gamma,u,L,f,nu1,nu2)
-		implicit none
-
-		
-
-	end subroutine mgcyc
+	end subroutine MGCYC
 
 end program main
