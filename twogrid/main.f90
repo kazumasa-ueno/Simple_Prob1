@@ -14,18 +14,17 @@ program main
 	real(8) :: phi(N,N) !計算する電位
 	real(8) :: rho(N,N) !電荷密度
 	real(8) :: f(N,N) !右辺の値
-	real(8) :: Lf(-1:1,-1:1) !L on fine grid
-	real(8) :: Lc(-1:1,-1:1) !L on course grid
+	real(8) :: L(-1:1,-1:1) !L on fine grid
 	real(8) :: Ifc(-1:1,-1:1) !Restriction operator
 	real(8) :: Icf(-1:1,-1:1) !Interpolation operation
 
-	call initialize(phi, rho, f, Lf, Lc, Ifc, Icf, N, e0, hf)
+	call initialize(phi, rho, f, L, Ifc, Icf, N, e0, hf)
 
-	call smooth(phi, f, Lf, N, hf, Conv, nu1)
+	call smooth(phi, f, L, N, hf, Conv, nu1)
 
-	call CGC(phi, Lf, Lc, Ifc, Icf, N, Nc, f, hc, Conv)
+	call CGC(phi, L, Ifc, Icf, N, Nc, f, hc, Conv)
 
-	call smooth(phi, f, Lf, N, hf, Conv, nu2)
+	call smooth(phi, f, L, N, hf, Conv, nu2)
 
 	open(unit=10, file="./output/output.txt", iostat=ios, status="replace", action="write")
 	if ( ios /= 0 ) stop "Error opening file ./output/output.txt"
@@ -35,10 +34,10 @@ program main
 	stop
 contains
 
-	subroutine initialize(phi, rho, f, Lf, Lc, Ifc, Icf, N, e0, hf)
+	subroutine initialize(phi, rho, f, L, Ifc, Icf, N, e0, hf)
 		implicit none
 
-		real(8), intent(inout) :: phi(:,:), rho(:,:), f(:,:), Lf(-1:1,-1:1), Lc(-1:1,-1:1), Ifc(-1:1,-1:1), Icf(-1:1,-1:1)
+		real(8), intent(inout) :: phi(:,:), rho(:,:), f(:,:), L(-1:1,-1:1), Ifc(-1:1,-1:1), Icf(-1:1,-1:1)
 		real(8), intent(in) :: e0, hf
 		integer, intent(in) :: N
 		integer :: i, j
@@ -56,21 +55,13 @@ contains
 
 		f(:,:) = rho(:,:) / e0
 
-		Lf( :, :) = 0.d0
-		Lf( 0, 0) = 4.d0
-		Lf(-1, 0) = -1.d0
-		Lf( 0,-1) = -1.d0
-		Lf( 1, 0) = -1.d0
-		Lf( 0, 1) = -1.d0
-		Lf(:,:) = Lf / hf**2
-
-		Lc( :, :) = 0.d0
-		Lc( 0, 0) = 4.d0
-		Lc(-1, 0) = -1.d0
-		Lc( 0,-1) = -1.d0
-		Lc( 1, 0) = -1.d0
-		Lc( 0, 1) = -1.d0
-		Lc(:,:) = Lc / hc**2
+		L( :, :) = 0.d0
+		L( 0, 0) = 4.d0
+		L(-1, 0) = -1.d0
+		L( 0,-1) = -1.d0
+		L( 1, 0) = -1.d0
+		L( 0, 1) = -1.d0
+		L(:,:) = L / hf**2
 
 		Ifc( :, :) = 1.d0
 		Ifc( 0, 0) = 4.d0
@@ -90,10 +81,10 @@ contains
 
 	end subroutine initialize
 
-	subroutine smooth(phi, f, Lf, N, hf, Conv, nu)
+	subroutine smooth(phi, f, L, N, hf, Conv, nu)
 		implicit none
 
-		real(8), intent(in) :: f(:,:), Lf(-1:1,-1:1), hf, Conv
+		real(8), intent(in) :: f(:,:), L(-1:1,-1:1), hf, Conv
 		integer, intent(in) :: N, nu
 		real(8), intent(inout) :: phi(:,:)
 
@@ -102,8 +93,10 @@ contains
 		real(8) :: MaxErr !最大のエラー
 		real(8) :: CurErr !現在のエラー
 		real(8) :: Prev !前のループの値
+		real(8) :: Prev_phi !前のループでのphiの最大値
 
 		Max = 1.d-5
+		Prev_phi = 0.d0
 		do nt = 1, nu
 			MaxErr = 0.d0
 			CurErr = 0.d0
@@ -138,10 +131,11 @@ contains
 				end do
 			end do
 			if(MaxErr < Conv) then 
-				write(*,*) nt, MaxErr, Conv
+				! write(*,*) nt, MaxErr, Conv
 				exit
 			end if
-			write(*,*) maxval(phi)
+			! write(*,*) abs(maxval(phi) - Prev_phi)
+			Prev_phi = maxval(phi)
 		end do
 
 	end subroutine smooth
@@ -215,10 +209,10 @@ contains
 
 	end subroutine Interpolation
 
-	subroutine CGC(phi, Lf, Lc, Ifc, Icf, N, Nc, f, hc, Conv)
+	subroutine CGC(phi, L, Ifc, Icf, N, Nc, f, hc, Conv)
 		implicit none
 		
-		real(8), intent(in) :: Lf(-1:1,-1:1), Lc(-1:1,-1:1), Ifc(-1:1,-1:1), Icf(-1:1,-1:1), f(:,:), hc, Conv
+		real(8), intent(in) :: L(-1:1,-1:1), Ifc(-1:1,-1:1), Icf(-1:1,-1:1), f(:,:), hc, Conv
 		real(8), intent(inout) :: phi(:,:)
 		integer, intent(in) :: N, Nc
 
@@ -230,7 +224,7 @@ contains
 		real(8) :: Prev !前のループの値
 
 		z(:,:) = phi(:,:)
-		call stencil(Lf, z, N)
+		call stencil(L, z, N)
 		df(:,:) = f(:,:) - z(:,:)
 
 		call Restriction(Ifc, df, dc, N, Nc)
@@ -278,8 +272,10 @@ contains
 
 		phi(:,:) = phi(:,:) + vf(:,:)
 
-		write(*,*) loop, maxval(vf)
-		write(*,*) maxval(phi)
+		! write(*,*) loop, maxval(vf)
+		! do i = 1, loop
+		! 	write(*,*) maxval(abs(vf))
+		! end do
 
 	end subroutine CGC
 
