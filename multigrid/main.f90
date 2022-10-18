@@ -1,7 +1,7 @@
 program main
 	implicit none
 
-	integer, parameter :: N = 128 !横方向格子数
+	integer, parameter :: N = 256 !横方向格子数
 	integer, parameter :: Nc = N / 2 !粗い格子数
 	real(8), parameter :: X = 1.d0, Y = 1.d0 !計算領域サイズ
 	real(8), parameter :: hf = X / N !細かい格子間隔
