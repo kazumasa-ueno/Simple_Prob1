@@ -9,8 +9,8 @@ program main
 	real(8), parameter :: hf = X / (N-1) !細かい格子間隔
 	real(8), parameter :: e0 = 8.85d-12 !真空の誘電率
 	real(8), parameter :: Conv = 1.d-6 !収束判定用
-	integer, parameter :: nu1 = 3, nu2 = 100 !smoothing のステップ数上限
-	integer :: ios
+	integer, parameter :: nu1 = 1, nu2 = 1 !smoothing のステップ数上限
+	integer :: ios, nt
 	
 	real(8) :: phi(N,N) !計算する電位
 	real(8) :: rho(N,N) !電荷密度
@@ -21,8 +21,13 @@ program main
 
 	call initialize(phi, rho, f, L, Ifc, Icf, N, e0, hf)
 
-	! call MGCYC(k, gamma, phi, L/hf**2, f, nu1, nu2, X, Ifc, Icf)
-	call MGCYC(k, gamma, phi, L, f, nu1, nu2, X, Ifc, Icf, N, Nc)
+	open(unit=20, file="./output/ercheck.txt", iostat=ios, status="replace", action="write")
+	if ( ios /= 0 ) stop "Error opening file ./output/ercheck.txt"
+
+	do nt = 1, 10
+		call MGCYC(k, gamma, phi, L, f, nu1, nu2, X, Ifc, Icf, N, Nc)
+		write(20,*) phi(:,:)
+	end do
 
 	open(unit=10, file="./output/output.txt", iostat=ios, status="replace", action="write")
 	if ( ios /= 0 ) stop "Error opening file ./output/output.txt"
@@ -219,11 +224,18 @@ contains
 		real(8) :: df(N,N), dc(Nc,Nc), vf(N,N), vc(Nc,Nc), tmp(N,N)
 		real(8) :: hf, hc
 
+
 		hf = X/(N-1)
 		hc = X/(Nc-1)
 
+		if(k==7) then
+			write(*,*) u(:,:)
+		end if
 		!Presmoothing
 		call smooth(u, f, hf, nu1)
+		if(k==7) then
+			write(*,*) u(:,:)
+		end if
 
 		!Coarse grid correction
 		!Compute the defect
@@ -233,6 +245,7 @@ contains
 		df(:,:) = f(:,:) - tmp(:,:)
 
 		!Restrict the defect
+		dc(:,:) = 0.d0
 		call Restriction(Ifc, df, dc, N, Nc)
 
 		!Compute an approximate solution v of the defect equation on k-1
