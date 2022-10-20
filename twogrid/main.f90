@@ -276,11 +276,6 @@ contains
 
 		phi(:,:) = phi(:,:) + vf(:,:)
 
-		! write(*,*) loop, maxval(vf)
-		! do i = 1, loop
-		! 	write(*,*) maxval(abs(vf))
-		! end do
-
 	end subroutine CGC
 
 

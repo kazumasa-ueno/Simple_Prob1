@@ -11,7 +11,10 @@
 ! size of coarsest grid: h_0 = 1/2
 
 program main
+	use,intrinsic :: iso_fortran_env
 	implicit none
+
+	integer(int32) :: time_begin_c,time_end_c, CountPerSec, CountMax
 
 	integer, parameter :: k = 8 !一番細かい格子の深さ
 	integer, parameter :: gamma = 1
@@ -32,6 +35,8 @@ program main
 	real(8) :: Ifc(-1:1,-1:1) !Restriction operator
 	real(8) :: Icf(-1:1,-1:1) !Interpolation operation
 
+	call system_clock(time_begin_c, CountPerSec, CountMax)
+
 	!Initialize parameters
 	call initialize(phi, rho, f, L, Ifc, Icf, N, e0, hf)
 
@@ -42,6 +47,10 @@ program main
 		tmp(:) = reshape(Prev(:,:) - phi(:,:),(/N**2/))
 		write(*,*) (dot_product(tmp(:),tmp(:)))**0.5
 	end do
+
+  call system_clock(time_end_c)
+	print *,time_begin_c,time_end_c, CountPerSec,CountMax
+  print *,real(time_end_c - time_begin_c)/CountPerSec,"sec"
 
 	open(unit=10, file="./output/output.txt", iostat=ios, status="replace", action="write")
 	if ( ios /= 0 ) stop "Error opening file ./output/output.txt"
