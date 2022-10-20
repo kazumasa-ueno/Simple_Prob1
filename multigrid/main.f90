@@ -1,16 +1,29 @@
+! solve the discrete Poisson equation with Dirichlet boundary conditions in the 2D unit square using Multigrid methods
+!
+! equations:
+!   -(phi_xx + phi_yy) = rho / e0
+!	  phi[boundary] = 0
+!
+! smoother: GS-RB relaxation
+! restriction: full weighting
+! prolongation: bilinear interpolation
+! standard coarsening: h_{k+1} = h_k / 2
+! size of coarsest grid: h_0 = 1/2
+
 program main
 	implicit none
 
-	integer, parameter :: k = 7
+	integer, parameter :: k = 8 !一番細かい格子の深さ
 	integer, parameter :: gamma = 1
+	integer, parameter :: nu1 = 1, nu2 = 1 !smoothing のステップ数
+	integer, parameter :: maxnt = 12 !mgcycの回数
 	integer, parameter :: N = 2**k+1 !横方向格子数
-	integer, parameter :: Nc = 2**(k-1)+1 !粗い格子の横方向格子数
+	integer, parameter :: Nc = 2**(k-1)+1 !1段階分粗い格子の横方向格子数
 	real(8), parameter :: X = 1.d0 !計算領域サイズ
-	real(8), parameter :: hf = X / (N-1) !細かい格子間隔
+	real(8), parameter :: hf = X / (N-1) !格子間隔
 	real(8), parameter :: e0 = 8.85d-12 !真空の誘電率
-	real(8), parameter :: Conv = 1.d-6 !収束判定用
-	integer, parameter :: nu1 = 1, nu2 = 1 !smoothing のステップ数上限
 	integer :: ios, nt
+	real(8) :: Prev(N,N), tmp(N**2) !前のステップの値を格納
 	
 	real(8) :: phi(N,N) !計算する電位
 	real(8) :: rho(N,N) !電荷密度
@@ -19,14 +32,15 @@ program main
 	real(8) :: Ifc(-1:1,-1:1) !Restriction operator
 	real(8) :: Icf(-1:1,-1:1) !Interpolation operation
 
+	!Initialize parameters
 	call initialize(phi, rho, f, L, Ifc, Icf, N, e0, hf)
 
-	open(unit=20, file="./output/ercheck.txt", iostat=ios, status="replace", action="write")
-	if ( ios /= 0 ) stop "Error opening file ./output/ercheck.txt"
-
-	do nt = 1, 5
+	!main loop
+	do nt = 1, maxnt
+		Prev(:,:) = phi(:,:)
 		call MGCYC(k, gamma, phi, L, f, nu1, nu2, X, Ifc, Icf, N, Nc)
-		write(20,*) phi(:,:)
+		tmp(:) = reshape(Prev(:,:) - phi(:,:),(/N**2/))
+		write(*,*) (dot_product(tmp(:),tmp(:)))**0.5
 	end do
 
 	open(unit=10, file="./output/output.txt", iostat=ios, status="replace", action="write")
@@ -64,7 +78,6 @@ contains
 		L( 0,-1) = -1.d0
 		L( 1, 0) = -1.d0
 		L( 0, 1) = -1.d0
-		! L(:,:) = -L(:,:)
 
 		Ifc( :, :) = 1.d0
 		Ifc( 0, 0) = 4.d0
@@ -92,52 +105,25 @@ contains
 		real(8), intent(inout) :: phi(:,:)
 
 		integer :: i, j, nt, N, b(2)
-		real(8) :: Max !最大値
-		real(8) :: MaxErr !最大のエラー
-		real(8) :: CurErr !現在のエラー
-		real(8) :: Prev !前のループの値
-		real(8) :: Prev_phi !前のループでのphiの最大値
 
 		b = shape(phi)
 		N = b(1)
 
-		Max = 1.d-5
-		Prev_phi = 0.d0
 		do nt = 1, nu
-			MaxErr = 0.d0
-			CurErr = 0.d0
 			do j = 2, N-1
 				do i = 2, N-1
 					if(mod(i+j,2) == 0) then
-						Prev = phi(i,j)
 						phi(i,j) = (hf**2 * f(i,j) + phi(i-1,j) + phi(i+1,j) + phi(i,j-1) + phi(i,j+1)) / 4.d0
-						if(Max < abs(phi(i,j))) then 
-							Max = phi(i,j) 
-						end if
-						CurErr = (abs(phi(i,j) - Prev)) / Max
-						if(MaxErr < CurErr) then 
-							MaxErr = CurErr 
-						end if
 					end if
 				end do
 			end do
 			do j = 2, N-1
 				do i = 2, N-1
 					if(mod(i+j,2) /= 0) then
-						Prev = phi(i,j)
 						phi(i,j) = (hf**2 * f(i,j) + phi(i-1,j) + phi(i+1,j) + phi(i,j-1) + phi(i,j+1)) / 4.d0
-						if(Max < abs(phi(i,j))) then 
-							Max = phi(i,j) 
-						end if
-						CurErr = abs(phi(i,j) - Prev)
-						if(MaxErr < CurErr) then 
-							MaxErr = CurErr 
-						end if
 					end if
 				end do
 			end do
-			! write(*,*) abs(maxval(phi) - Prev_phi)
-			Prev_phi = maxval(phi)
 		end do
 
 	end subroutine smooth
@@ -211,7 +197,6 @@ contains
 
 	end subroutine Interpolation
 
-
 	recursive subroutine MGCYC(k,gamma,u,L,f,nu1,nu2, X,Ifc,Icf,N,Nc)
 		implicit none
 
@@ -219,22 +204,22 @@ contains
 		real(8), intent(in) :: L(-1:1,-1:1), f(:,:), X, Ifc(-1:1,-1:1), Icf(-1:1,-1:1)
 		real(8), intent(inout) :: u(:,:)
 
-		integer :: Ncc
+		integer :: Ncc !coarser grid number
 		integer :: nt
-		real(8) :: df(N,N), dc(Nc,Nc), vf(N,N), vc(Nc,Nc), tmp(N,N)
-		real(8) :: hf, hc
+		real(8) :: df(N,N), dc(Nc,Nc), vf(N,N), vc(Nc,Nc), tmp(N,N) !defects and errors etc.
+		real(8) :: hf, hc !grid size of fine and coarse grid
 
 
 		hf = X/(N-1)
 		hc = X/(Nc-1)
 
+		!Presmoothing
 		call smooth(u, f, hf, nu1)
 
 		!Coarse grid correction
 		!Compute the defect
 		tmp(:,:) = u(:,:)
 		call stencil(L/hf**2, tmp, N)
-		! write(*,*) N, maxval(f), maxval(tmp)
 		df(:,:) = f(:,:) - tmp(:,:)
 
 		!Restrict the defect
@@ -253,10 +238,6 @@ contains
 			end do
 		end if
 
-		if(k==2) then
-			write(*,*) vc(:,:)
-		end if
-
 		!Interpolate the correction
 		vf(:,:) = 0.d0
 		call Interpolation(Icf, vf, vc, N, Nc)
@@ -266,7 +247,6 @@ contains
 
 		!Postsmoothing
 		call smooth(u, f, hf, nu2)
-		! write(*,*) N, maxval(u), maxval(vf)
 
 	end subroutine MGCYC
 
