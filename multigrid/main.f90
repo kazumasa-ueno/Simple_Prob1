@@ -3,8 +3,8 @@ program main
 
 	integer, parameter :: k = 7
 	integer, parameter :: gamma = 1
-	integer, parameter :: N = 2**k+2 !横方向格子数
-	integer, parameter :: Nc = 2**(k-1)+2 !粗い格子の横方向格子数
+	integer, parameter :: N = 2**k+1 !横方向格子数
+	integer, parameter :: Nc = 2**(k-1)+1 !粗い格子の横方向格子数
 	real(8), parameter :: X = 1.d0 !計算領域サイズ
 	real(8), parameter :: hf = X / (N-1) !細かい格子間隔
 	real(8), parameter :: e0 = 8.85d-12 !真空の誘電率
@@ -24,7 +24,7 @@ program main
 	open(unit=20, file="./output/ercheck.txt", iostat=ios, status="replace", action="write")
 	if ( ios /= 0 ) stop "Error opening file ./output/ercheck.txt"
 
-	do nt = 1, 10
+	do nt = 1, 5
 		call MGCYC(k, gamma, phi, L, f, nu1, nu2, X, Ifc, Icf, N, Nc)
 		write(20,*) phi(:,:)
 	end do
@@ -228,14 +228,7 @@ contains
 		hf = X/(N-1)
 		hc = X/(Nc-1)
 
-		if(k==7) then
-			write(*,*) u(:,:)
-		end if
-		!Presmoothing
 		call smooth(u, f, hf, nu1)
-		if(k==7) then
-			write(*,*) u(:,:)
-		end if
 
 		!Coarse grid correction
 		!Compute the defect
@@ -249,17 +242,20 @@ contains
 		call Restriction(Ifc, df, dc, N, Nc)
 
 		!Compute an approximate solution v of the defect equation on k-1
-		if(k==1) then
+		if(k==2) then
 			vc(:,:) = 0.d0
 			vc(2,2) = dc(2,2)*hc**2 / 4.d0
 		else
 			do nt = 1, gamma
-				Ncc = 2**(k-2)+2	
+				Ncc = 2**(k-2)+1	
 				vc(:,:) = 0.d0
 				call MGCYC(k-1,gamma,vc,L,dc,nu1,nu2,X,Ifc,Icf,Nc,Ncc)
 			end do
 		end if
 
+		if(k==2) then
+			write(*,*) vc(:,:)
+		end if
 
 		!Interpolate the correction
 		vf(:,:) = 0.d0
